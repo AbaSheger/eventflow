@@ -1,0 +1,64 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: notification-service
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/notifications_db}
+    username: ${SPRING_DATASOURCE_USERNAME:eventflow}
+    password: ${SPRING_DATASOURCE_PASSWORD:eventflow}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: notification-consumers
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.eventflow.*"
+        spring.json.use.type.headers: false
+
+  mail:
+    host: ${MAIL_HOST:sandbox.smtp.mailtrap.io}
+    port: ${MAIL_PORT:2525}
+    username: ${MAIL_USERNAME:your_mailtrap_username}
+    password: ${MAIL_PASSWORD:your_mailtrap_password}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+kafka:
+  topic:
+    orders: orders
+    orders-dlt: orders.DLT
+
+notification:
+  from-email: noreply@eventflow.dev
+  retry:
+    max-attempts: 3
+    backoff-initial-ms: 1000
+    backoff-multiplier: 2.0
+
+logging:
+  level:
+    com.eventflow: DEBUG
+    org.apache.kafka: WARN
