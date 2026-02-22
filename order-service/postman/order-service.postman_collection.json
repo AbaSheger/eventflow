@@ -1,0 +1,176 @@
+{
+  "info": {
+    "name": "Order Service API Tests",
+    "description": "Postman tests for order-service endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Create Order",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 201', function () {",
+              "  pm.response.to.have.status(201);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('Response contains UUID id', function () {",
+              "  pm.expect(body.id).to.match(/^[0-9a-fA-F-]{36}$/);",
+              "});",
+              "pm.test('Order status is PLACED', function () {",
+              "  pm.expect(body.status).to.eql('PLACED');",
+              "});",
+              "pm.collectionVariables.set('orderId', body.id);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerEmail\": \"qa@example.com\",\n  \"productName\": \"Event Ticket\",\n  \"quantity\": 2,\n  \"totalPrice\": 99.99\n}"
+        },
+        "url": "{{baseUrl}}/api/orders"
+      }
+    },
+    {
+      "name": "Get Order By Id",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('Returned id matches created order id', function () {",
+              "  pm.expect(body.id).to.eql(pm.collectionVariables.get('orderId'));",
+              "});",
+              "pm.test('Order status is PLACED', function () {",
+              "  pm.expect(body.status).to.eql('PLACED');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/orders/{{orderId}}"
+      }
+    },
+    {
+      "name": "Cancel Order",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('Order status is CANCELLED', function () {",
+              "  pm.expect(body.status).to.eql('CANCELLED');",
+              "});",
+              "pm.test('Returned id matches created order id', function () {",
+              "  pm.expect(body.id).to.eql(pm.collectionVariables.get('orderId'));",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/orders/{{orderId}}/cancel"
+      }
+    },
+    {
+      "name": "Cancel Already Cancelled Order (409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 409', function () {",
+              "  pm.response.to.have.status(409);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('Problem type is conflict', function () {",
+              "  pm.expect(body.type).to.include('/errors/conflict');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": "{{baseUrl}}/api/orders/{{orderId}}/cancel"
+      }
+    },
+    {
+      "name": "Create Order Validation Error (400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 400', function () {",
+              "  pm.response.to.have.status(400);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('Validation errors are returned', function () {",
+              "  pm.expect(body.errors).to.be.an('object');",
+              "  pm.expect(Object.keys(body.errors).length).to.be.greaterThan(0);",
+              "});",
+              "pm.test('Problem type is validation', function () {",
+              "  pm.expect(body.type).to.include('/errors/validation');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"customerEmail\": \"bad-email\",\n  \"productName\": \"\",\n  \"quantity\": 0,\n  \"totalPrice\": 0\n}"
+        },
+        "url": "{{baseUrl}}/api/orders"
+      }
+    }
+  ]
+}
