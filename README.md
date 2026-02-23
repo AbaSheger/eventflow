@@ -8,7 +8,7 @@ A two-service Spring Boot application demonstrating **event-driven architecture*
 
 ```mermaid
 graph TD
-    Client["HTTP Client<br/>(curl / Postman)"]
+    Client["HTTP Client<br/>(curl / Postman / Swagger)"]
 
     subgraph order-service ["Order Service :8080"]
         OC[OrderController]
@@ -51,19 +51,22 @@ graph TD
 | Concept | Implementation |
 |---|---|
 | Event-driven architecture | Order events published to Kafka, consumed asynchronously |
-| Async decoupling | Order Service doesn't know about Notification Service |
-| Multi-service Docker | Both services + infra wired via Docker Compose |
+| Async decoupling | Order Service has no compile-time dependency on Notification Service |
+| Type-safe event routing | Kafka type headers (`__TypeId__`) + per-service type mappings — no shared JAR |
+| Java 21 pattern matching | `switch` on event type in `OrderEventConsumer` |
 | Dead-letter topic | Failed messages routed to `orders.DLT` after retry exhaustion |
-| Exponential backoff | 1s → 2s → 4s retry on consumer failures |
-| Database migrations | Flyway manages schema for both services |
-| Global exception handling | RFC 9457 `ProblemDetail` responses in Order Service |
+| Exponential backoff | 1 s → 2 s → 4 s retry on consumer failures (3 attempts) |
+| Resilient email delivery | Email failures saved as `FAILED` notifications; event not lost |
+| Database migrations | Flyway manages schema for both services independently |
+| RFC 9457 error responses | `ProblemDetail` used for all error responses in Order Service |
+| Multi-service Docker | Both services + all infra wired via a single `docker-compose.yml` |
 
 ---
 
 ## Prerequisites
 
 - Docker & Docker Compose v2+
-- (Optional) Java 21 + Maven for local development
+- (Optional) Java 21 + Maven for running tests locally
 
 ---
 
@@ -72,10 +75,10 @@ graph TD
 ### 1. Clone & configure
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/AbaSheger/eventflow.git
 cd eventflow
 cp .env.example .env
-# Edit .env — add your Mailtrap SMTP credentials
+# Edit .env — add your Mailtrap SMTP credentials (only these two lines needed)
 ```
 
 ### 2. Start everything
@@ -84,16 +87,38 @@ cp .env.example .env
 docker-compose up --build
 ```
 
-All services will start in dependency order:
-- Zookeeper → Kafka → PostgreSQL → Order Service → Notification Service
-- Kafka UI: http://localhost:8090
+Services start in dependency order: Zookeeper → Kafka → PostgreSQL → Order Service → Notification Service
+
+| URL | Description |
+|---|---|
+| http://localhost:8080/swagger-ui.html | Order Service — API docs & testing |
+| http://localhost:8081/swagger-ui.html | Notification Service — API docs & testing |
+| http://localhost:8090 | Kafka UI — browse topics, messages, consumer groups |
 
 ### 3. Stop
 
 ```bash
-docker-compose down          # keep volumes
+docker-compose down          # keep volumes (DB data preserved)
 docker-compose down -v       # also wipe DB data
 ```
+
+---
+
+## API Endpoints
+
+### Order Service (`localhost:8080`)
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/orders` | Place a new order — publishes `OrderPlacedEvent` |
+| `GET` | `/api/orders/{id}` | Get order by ID |
+| `POST` | `/api/orders/{id}/cancel` | Cancel an order — publishes `OrderCancelledEvent` |
+
+### Notification Service (`localhost:8081`)
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/notifications` | List all notifications, newest first |
 
 ---
 
@@ -111,7 +136,7 @@ curl -s -X POST http://localhost:8080/api/orders \
   }' | jq
 ```
 
-Response:
+Response (`201 Created`):
 ```json
 {
   "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
@@ -124,7 +149,7 @@ Response:
 }
 ```
 
-### Fetch an order
+### Get an order
 ```bash
 curl -s http://localhost:8080/api/orders/<order-id> | jq
 ```
@@ -134,34 +159,30 @@ curl -s http://localhost:8080/api/orders/<order-id> | jq
 curl -s -X POST http://localhost:8080/api/orders/<order-id>/cancel | jq
 ```
 
-### List all notifications
+Response (`200 OK`):
+```json
+{
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "CANCELLED",
+  ...
+}
+```
+
+### List notifications
 ```bash
 curl -s http://localhost:8081/api/notifications | jq
 ```
 
+After placing and then cancelling an order you will see two entries — `ORDER_PLACED` and `ORDER_CANCELLED` — for the same `orderId`. Kafka consumption is asynchronous; allow ~1 second after each action before querying.
+
 ---
 
-## Postman Collection
+## Postman Collections
 
-Import these collections into Postman:
+Import into Postman for a ready-made request suite:
 
 - `order-service/postman/order-service.postman_collection.json`
 - `notification-service/postman/notification-service.postman_collection.json`
-
-Use these base URLs:
-
-- Order Service: `http://localhost:8080`
-- Notification Service: `http://localhost:8081`
-
----
-
-## Service Endpoints
-
-| Service | Port | Endpoints |
-|---|---|---|
-| Order Service | 8080 | `POST /api/orders` `GET /api/orders/{id}` `POST /api/orders/{id}/cancel` |
-| Notification Service | 8081 | `GET /api/notifications` |
-| Kafka UI | 8090 | Web interface — browse topics, messages, consumer groups |
 
 ---
 
@@ -171,29 +192,39 @@ Use these base URLs:
 eventflow/
 ├── docker-compose.yml
 ├── init-db.sql                        # Creates orders_db & notifications_db
-├── .env.example
+├── .env.example                       # MAILTRAP_USERNAME / MAILTRAP_PASSWORD
 ├── .github/workflows/ci.yml
 ├── order-service/
 │   ├── Dockerfile
 │   ├── pom.xml
-│   └── src/main/java/com/eventflow/orderservice/
-│       ├── controller/OrderController.java
-│       ├── service/OrderService.java
-│       ├── event/          # OrderPlacedEvent, OrderCancelledEvent (records)
-│       ├── model/Order.java
-│       ├── dto/            # CreateOrderRequest, OrderResponse (records)
-│       ├── exception/      # GlobalExceptionHandler, OrderNotFoundException
-│       └── config/KafkaProducerConfig.java
+│   └── src/
+│       ├── main/java/com/eventflow/orderservice/
+│       │   ├── controller/OrderController.java
+│       │   ├── service/OrderService.java
+│       │   ├── event/          # OrderPlacedEvent, OrderCancelledEvent (records)
+│       │   ├── model/Order.java
+│       │   ├── dto/            # CreateOrderRequest, OrderResponse (records)
+│       │   ├── exception/      # GlobalExceptionHandler (ProblemDetail), OrderNotFoundException
+│       │   └── config/KafkaProducerConfig.java
+│       └── test/java/com/eventflow/orderservice/
+│           ├── service/OrderServiceTest.java              # Mockito unit tests
+│           └── integration/OrderKafkaIntegrationTest.java # @EmbeddedKafka + H2
 └── notification-service/
     ├── Dockerfile
     ├── pom.xml
-    └── src/main/java/com/eventflow/notificationservice/
-        ├── consumer/OrderEventConsumer.java
-        ├── service/NotificationService.java + EmailService.java
-        ├── event/          # Mirror records — no shared JAR, JSON-coupled
-        ├── model/Notification.java
-        ├── controller/NotificationController.java
-        └── config/KafkaConsumerConfig.java + KafkaProducerConfig.java
+    └── src/
+        ├── main/java/com/eventflow/notificationservice/
+        │   ├── consumer/OrderEventConsumer.java      # Java 21 pattern switch
+        │   ├── service/NotificationService.java
+        │   ├── service/EmailService.java
+        │   ├── event/          # Mirror records — JSON-coupled, no shared JAR
+        │   ├── model/Notification.java
+        │   ├── controller/NotificationController.java
+        │   └── config/
+        │       ├── KafkaConsumerConfig.java          # ErrorHandlingDeserializer + DLT
+        │       └── KafkaProducerConfig.java          # KafkaTemplate for DLT publisher
+        └── test/java/com/eventflow/notificationservice/
+            └── service/NotificationServiceTest.java  # Mockito unit tests
 ```
 
 ---
@@ -201,32 +232,41 @@ eventflow/
 ## Running Tests
 
 ```bash
-# Order Service unit + integration tests
+# Order Service — unit tests + Kafka integration test
 cd order-service && mvn test
 
-# Notification Service unit tests
+# Notification Service — unit tests
 cd notification-service && mvn test
 ```
 
-The integration test uses `@EmbeddedKafka` — no Docker required.
+The order service integration test (`OrderKafkaIntegrationTest`) uses `@EmbeddedKafka` and H2 in PostgreSQL-compatibility mode — no Docker required.
 
 ---
 
 ## CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`) runs on every push:
-1. Builds and tests both services in parallel
-2. On `main` branch: builds both Docker images (push to registry disabled by default — add Docker Hub credentials to enable)
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to any branch and on pull requests to `main`:
+
+1. **Build & test** both services in parallel (Java 21, Maven)
+2. **Upload** Surefire test reports as build artifacts
+3. **Build Docker images** — only on the `main` branch (`push: false` by default; add Docker Hub credentials to enable pushing)
 
 ---
 
 ## Configuration Reference
 
-| Environment Variable | Default | Description |
-|---|---|---|
-| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/...` | DB connection |
-| `SPRING_KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka brokers |
-| `MAIL_HOST` | `sandbox.smtp.mailtrap.io` | SMTP host |
-| `MAIL_PORT` | `2525` | SMTP port |
-| `MAIL_USERNAME` | — | Mailtrap username |
-| `MAIL_PASSWORD` | — | Mailtrap password |
+Only two values need to be supplied when running locally — everything else is pre-configured in `docker-compose.yml`:
+
+| Variable in `.env` | Description |
+|---|---|
+| `MAILTRAP_USERNAME` | Mailtrap inbox username (get from mailtrap.io) |
+| `MAILTRAP_PASSWORD` | Mailtrap inbox password |
+
+The following are set automatically inside `docker-compose.yml` and don't need to be changed for local development:
+
+| Environment Variable | Value |
+|---|---|
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://postgres:5432/orders_db` (or `notifications_db`) |
+| `SPRING_KAFKA_BOOTSTRAP_SERVERS` | `kafka:29092` (internal Docker network) |
+| `MAIL_HOST` | `sandbox.smtp.mailtrap.io` |
+| `MAIL_PORT` | `2525` |
