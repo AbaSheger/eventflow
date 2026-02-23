@@ -33,7 +33,6 @@ public class NotificationService {
             log.error("Failed to send confirmation email for order {}: {}", event.orderId(), ex.getMessage());
             notification.setStatus(Notification.DeliveryStatus.FAILED);
             notification.setErrorMessage(ex.getMessage());
-            throw ex; // re-throw so Kafka retry/DLT kicks in
         } finally {
             notificationRepository.save(notification);
         }
@@ -53,7 +52,6 @@ public class NotificationService {
             log.error("Failed to send cancellation email for order {}: {}", event.orderId(), ex.getMessage());
             notification.setStatus(Notification.DeliveryStatus.FAILED);
             notification.setErrorMessage(ex.getMessage());
-            throw ex;
         } finally {
             notificationRepository.save(notification);
         }

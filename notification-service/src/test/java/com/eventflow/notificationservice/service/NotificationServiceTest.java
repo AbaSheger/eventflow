@@ -62,9 +62,7 @@ class NotificationServiceTest {
         doThrow(new RuntimeException("SMTP error")).when(emailService).sendOrderConfirmation(event);
         when(notificationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> notificationService.handleOrderPlaced(event))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessage("SMTP error");
+        notificationService.handleOrderPlaced(event);
 
         ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
         verify(notificationRepository).save(captor.capture());

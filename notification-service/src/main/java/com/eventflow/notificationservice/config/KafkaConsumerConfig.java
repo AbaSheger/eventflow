@@ -1,7 +1,5 @@
 package com.eventflow.notificationservice.config;
 
-import com.eventflow.notificationservice.event.OrderCancelledEvent;
-import com.eventflow.notificationservice.event.OrderPlacedEvent;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
@@ -31,6 +29,15 @@ public class KafkaConsumerConfig {
     @Value("${spring.kafka.consumer.group-id}")
     private String groupId;
 
+    @Value("${spring.kafka.consumer.properties.spring.json.trusted.packages:com.eventflow.*}")
+    private String trustedPackages;
+
+    @Value("${spring.kafka.consumer.properties.spring.json.use.type.headers:true}")
+    private boolean useTypeHeaders;
+
+    @Value("${spring.kafka.consumer.properties.spring.json.type.mapping:orderPlaced:com.eventflow.notificationservice.event.OrderPlacedEvent,orderCancelled:com.eventflow.notificationservice.event.OrderCancelledEvent}")
+    private String typeMappings;
+
     @Value("${notification.retry.backoff-initial-ms:1000}")
     private long backoffInitialMs;
 
@@ -43,9 +50,6 @@ public class KafkaConsumerConfig {
     @Bean
     public ConsumerFactory<String, Object> consumerFactory() {
         JsonDeserializer<Object> valueDeserializer = new JsonDeserializer<>();
-        valueDeserializer.addTrustedPackages("com.eventflow.*");
-        valueDeserializer.setUseTypeHeaders(false);
-
         ErrorHandlingDeserializer<Object> errorHandlingDeserializer =
                 new ErrorHandlingDeserializer<>(valueDeserializer);
 
@@ -55,6 +59,9 @@ public class KafkaConsumerConfig {
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        props.put("spring.json.trusted.packages", trustedPackages);
+        props.put("spring.json.use.type.headers", useTypeHeaders);
+        props.put("spring.json.type.mapping", typeMappings);
 
         return new DefaultKafkaConsumerFactory<>(props, new StringDeserializer(), errorHandlingDeserializer);
     }

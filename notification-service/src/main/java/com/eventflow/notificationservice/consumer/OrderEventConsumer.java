@@ -5,10 +5,8 @@ import com.eventflow.notificationservice.event.OrderPlacedEvent;
 import com.eventflow.notificationservice.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.support.KafkaHeaders;
-import org.springframework.messaging.handler.annotation.Header;
-import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -23,13 +21,18 @@ public class OrderEventConsumer {
             groupId = "${spring.kafka.consumer.group-id}",
             containerFactory = "kafkaListenerContainerFactory"
     )
-    public void consume(@Payload Object rawEvent,
-                        @Header(KafkaHeaders.RECEIVED_TOPIC) String topic,
-                        @Header(KafkaHeaders.RECEIVED_PARTITION) int partition,
-                        @Header(KafkaHeaders.OFFSET) long offset) {
+    public void consume(ConsumerRecord<String, Object> record) {
+        Object rawEvent = record.value();
 
         log.debug("Received event from topic={} partition={} offset={}: {}",
-                topic, partition, offset, rawEvent.getClass().getSimpleName());
+                record.topic(), record.partition(), record.offset(),
+                rawEvent == null ? "null" : rawEvent.getClass().getSimpleName());
+
+        if (rawEvent == null) {
+            log.warn("Null event received at topic={} partition={} offset={}",
+                    record.topic(), record.partition(), record.offset());
+            return;
+        }
 
         switch (rawEvent) {
             case OrderPlacedEvent event -> notificationService.handleOrderPlaced(event);

@@ -141,6 +141,20 @@ curl -s http://localhost:8081/api/notifications | jq
 
 ---
 
+## Postman Collection
+
+Import these collections into Postman:
+
+- `order-service/postman/order-service.postman_collection.json`
+- `notification-service/postman/notification-service.postman_collection.json`
+
+Use these base URLs:
+
+- Order Service: `http://localhost:8080`
+- Notification Service: `http://localhost:8081`
+
+---
+
 ## Service Endpoints
 
 | Service | Port | Endpoints |

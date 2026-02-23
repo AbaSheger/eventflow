@@ -1,0 +1,50 @@
+{
+  "info": {
+    "name": "Notification Service API Tests",
+    "description": "Postman tests for notification-service endpoint.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081"
+    }
+  ],
+  "item": [
+    {
+      "name": "Get All Notifications",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "const body = pm.response.json();",
+              "pm.test('Response is an array', function () {",
+              "  pm.expect(Array.isArray(body)).to.eql(true);",
+              "});",
+              "if (body.length > 0) {",
+              "  pm.test('First item has core notification fields', function () {",
+              "    pm.expect(body[0]).to.have.property('id');",
+              "    pm.expect(body[0]).to.have.property('orderId');",
+              "    pm.expect(body[0]).to.have.property('recipientEmail');",
+              "    pm.expect(body[0]).to.have.property('type');",
+              "    pm.expect(body[0]).to.have.property('status');",
+              "    pm.expect(body[0]).to.have.property('createdAt');",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/notifications"
+      }
+    }
+  ]
+}
